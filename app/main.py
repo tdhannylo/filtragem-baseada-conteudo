@@ -63,11 +63,13 @@ st.markdown(
 
 # ── Cabeçalho (nativo — respeita o tema dark/light automaticamente) ──────────
 st.title("RecipeMatch")
-st.caption("Recomendações personalizadas por conteúdo, com TF-IDF e similaridade de cosseno.")
+st.caption(
+    "Recomendações personalizadas por conteúdo, com TF-IDF e similaridade de cosseno."
+)
 st.divider()
 
 
-# ── Funções cacheadas (idênticas ao main.py) ─────────────────────────────────
+# ── Funções cacheadas ────────────────────────────────────────────────────────
 @st.cache_data(show_spinner="Carregando e preparando o dataset...")
 def load_project_data(recipe_path: str, review_path: str, recipe_mtime: int, review_mtime: int):
     """Carrega os Parquet e prepara os campos textuais das receitas."""
@@ -96,6 +98,7 @@ def load_project_data(recipe_path: str, review_path: str, recipe_mtime: int, rev
             "CookTime",
             "TotalTime",
             "Images",
+            "Calories",
         ),
         review_columns=("RecipeId", "AuthorId", "Rating", "DateSubmitted"),
     )
@@ -138,15 +141,21 @@ recipes, reviews = load_project_data(
     DEFAULT_REVIEW_PATH.stat().st_mtime_ns,
 )
 if recipes.empty or reviews.empty:
-    st.error("Os arquivos de dados foram encontrados, mas não contêm receitas e avaliações utilizáveis.")
+    st.error(
+        "Os arquivos de dados foram encontrados, mas não contêm receitas e avaliações utilizáveis."
+    )
     st.stop()
 
 # ── Seleção de usuário ────────────────────────────────────────────────────────
 review_counts = reviews.groupby("AuthorId").size()
 minimum_user_history = 50
-user_options = review_counts[review_counts >= minimum_user_history].sort_values(ascending=False).index.tolist()
+user_options = review_counts[review_counts >= minimum_user_history].sort_values(
+    ascending=False
+).index.tolist()
 if not user_options:
-    st.error(f"Não há usuários com pelo menos {minimum_user_history} interações para a demonstração.")
+    st.error(
+        f"Não há usuários com pelo menos {minimum_user_history} interações para a demonstração."
+    )
     st.stop()
 
 selected_user = st.selectbox(
@@ -167,12 +176,14 @@ user_mean = float(valid_ratings.mean()) if not valid_ratings.empty else None
 
 st.markdown("### Histórico")
 
-# st.metric respeita o tema dark/light automaticamente
 col_a, col_b, _ = st.columns([1, 1, 4])
 with col_a:
     st.metric("Interações", len(user_reviews))
 with col_b:
-    st.metric("Nota média", f"{user_mean:.2f}" if user_mean is not None else "Sem avaliações válidas")
+    st.metric(
+        "Nota média",
+        f"{user_mean:.2f}" if user_mean is not None else "Sem avaliações válidas",
+    )
 
 with st.expander("Ver histórico completo", expanded=False):
     history_columns = ["RecipeId", "Rating"]
@@ -187,13 +198,16 @@ with st.expander("Ver histórico completo", expanded=False):
         lambda value: ", ".join(coerce_ingredient_list(value))
     )
     history["_rating_sort"] = pd.to_numeric(history["Rating"], errors="coerce")
+    history["Rating"] = history["Rating"].astype("string")
     history.loc[history["_rating_sort"].eq(0), "Rating"] = "Sem nota"
-    history = history.rename(columns={"Name": "Recipe", "Rating": "Rating"})
+    history = history.rename(columns={"Name": "Recipe"})
     display_columns = ["Recipe", "Rating", "Ingredients"]
     if "DateSubmitted" in history.columns:
         display_columns.append("DateSubmitted")
     st.dataframe(
-        history.sort_values("_rating_sort", ascending=False, na_position="last")[display_columns],
+        history.sort_values(
+            "_rating_sort", ascending=False, na_position="last"
+        )[display_columns],
         use_container_width=True,
         hide_index=True,
     )
@@ -232,6 +246,27 @@ with st.sidebar:
         help="Define quantas receitas serão exibidas após aplicar os filtros e ordenar o ranking.",
     )
 
+    st.markdown('<p class="rm-sidebar-section">Calorias</p>', unsafe_allow_html=True)
+    use_calories = st.checkbox(
+        "Filtrar por calorias",
+        value=False,
+        help="Ativa o filtro para limitar a quantidade máxima de calorias das receitas recomendadas.",
+    )
+
+    min_calories_val = 1
+    max_calories_val = 5000
+    default_calories_val = 700
+
+    max_calories = st.slider(
+        "Calorias máximas",
+        min_value=min_calories_val,
+        max_value=max_calories_val,
+        value=default_calories_val,
+        step=50,
+        disabled=not use_calories,
+        help="Mantém apenas receitas com calorias entre 1 kcal e o valor selecionado.",
+    )
+
     st.markdown('<p class="rm-sidebar-section">Diversidade</p>', unsafe_allow_html=True)
     use_mmr = st.checkbox(
         "Promover diversidade (MMR)",
@@ -253,9 +288,10 @@ with st.sidebar:
 
 # ── Geração das recomendações ─────────────────────────────────────────────────
 if gerar:
-    # Captura os valores dos widgets no momento do clique
     _result_count = result_count
     _max_time = max_time
+    _use_calories = use_calories
+    _max_calories = max_calories if _use_calories else None
     _avoid = [item.strip() for item in avoid_input.split(",") if item.strip()]
     _available = [item.strip() for item in available_input.split(",") if item.strip()]
     _use_mmr = use_mmr
@@ -272,7 +308,9 @@ if gerar:
         )
         profile, _ = build_user_profile(user_reviews, recipes, tfidf)
         if profile is None:
-            st.info("O histórico não contém avaliações informativas suficientes para construir um perfil.")
+            st.info(
+                "O histórico não contém avaliações informativas suficientes para construir um perfil."
+            )
             st.stop()
 
         recommender = RecipeRecommender(
@@ -288,6 +326,8 @@ if gerar:
             recipes,
             user_reviews,
             max_minutes=_max_time,
+            max_calories=_max_calories,
+            min_calories=1.0 if _use_calories else None,
             avoided_ingredients=_avoid,
             available_ingredients=_available,
         )
@@ -298,7 +338,9 @@ if gerar:
             explain=not _use_mmr,
         )
         if ranked.empty:
-            st.warning("Nenhuma receita atende aos filtros. Ajuste os critérios; nenhum filtro foi removido.")
+            st.warning(
+                "Nenhuma receita atende aos filtros. Ajuste os critérios; nenhum filtro foi removido."
+            )
             st.stop()
         if _use_mmr:
             ranked = recommender.mmr_diversify(ranked, _lambda)
@@ -308,12 +350,13 @@ if gerar:
     # ── Exibição dos resultados ───────────────────────────────────────────────
     st.markdown("### Recomendações")
     if _use_mmr:
-        st.caption("A posição reflete a ordem selecionada pelo equilíbrio entre relevância e diversidade.")
+        st.caption(
+            "A posição reflete a ordem selecionada pelo equilíbrio entre relevância e diversidade."
+        )
     else:
         st.caption("A posição reflete a ordem do ranking por compatibilidade.")
 
     for rank_i, row in enumerate(ranked.head(_result_count).itertuples(index=False), start=1):
-        # Imagem (mesma lógica do main.py)
         image_values = row.Images if hasattr(row, "Images") else None
         image_url = None
         if isinstance(image_values, np.ndarray):
@@ -324,20 +367,22 @@ if gerar:
                 None,
             )
 
-        # Metadados
         ingredients = coerce_ingredient_list(getattr(row, "RecipeIngredientParts", []))
         minutes = parse_duration_to_minutes(getattr(row, "TotalTime", None))
         category = getattr(row, "RecipeCategory", "Não informada") or "Não informada"
         time_str = f"{minutes:g} min" if minutes is not None else "Não informado"
 
-        # Pills de ingredientes (máx 8)
-        pills = "".join(
-            f'<span class="rm-pill">{ing}</span>' for ing in ingredients[:8]
+        cal_row_val = getattr(row, "Calories", None)
+        cal_str = (
+            f"{cal_row_val:g} kcal"
+            if cal_row_val is not None and not pd.isna(cal_row_val)
+            else "Não informado"
         )
+
+        pills = "".join(f'<span class="rm-pill">{ing}</span>' for ing in ingredients[:8])
         if len(ingredients) > 8:
             pills += f'<span class="rm-pill">+{len(ingredients) - 8} mais</span>'
 
-        # Card nativo (st.container respeita o tema dark/light)
         with st.container(border=True):
             if image_url:
                 col_text, col_img = st.columns([3, 1])
@@ -348,7 +393,9 @@ if gerar:
                         f'<span class="rm-rank-badge">#{rank_i}</span> **{row.Name}**',
                         unsafe_allow_html=True,
                     )
-                    st.caption(f"{category}  ·  ⏱ {time_str}  ·  Compatibilidade: {row.score:.4f}")
+                    st.caption(
+                        f"{category}  ·  ⏱ {time_str}  ·  Calorias: {cal_str}  ·  Compatibilidade: {row.score:.4f}"
+                    )
                     if getattr(row, "Description", None):
                         st.write(row.Description)
                     st.markdown(f"**Ingredientes:** {pills}", unsafe_allow_html=True)
@@ -358,7 +405,9 @@ if gerar:
                     f'<span class="rm-rank-badge">#{rank_i}</span> **{row.Name}**',
                     unsafe_allow_html=True,
                 )
-                st.caption(f"{category}  ·  ⏱ {time_str}  ·  Compatibilidade: {row.score:.4f}")
+                st.caption(
+                    f"{category}  ·  ⏱ {time_str}  ·  Calorias: {cal_str}  ·  Compatibilidade: {row.score:.4f}"
+                )
                 if getattr(row, "Description", None):
                     st.write(row.Description)
                 st.markdown(f"**Ingredientes:** {pills}", unsafe_allow_html=True)

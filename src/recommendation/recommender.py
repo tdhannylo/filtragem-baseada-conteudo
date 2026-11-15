@@ -32,7 +32,14 @@ class RecipeRecommender:
             return pd.DataFrame(columns=["RecipeId", "AuthorId", "Rating"])
         return self.reviews_df[self.reviews_df["AuthorId"] == self.user_id].copy() if self.user_id is not None else self.reviews_df.head(0).copy()
 
-    def _prepare_candidates(self, max_minutes: float | int | None = None, avoided_ingredients: Sequence[str] | None = None, available_ingredients: Sequence[str] | None = None) -> pd.DataFrame:
+    def _prepare_candidates(
+        self,
+        max_minutes: float | int | None = None,
+        max_calories: float | int | None = None,
+        min_calories: float | int | None = 1.0,
+        avoided_ingredients: Sequence[str] | None = None,
+        available_ingredients: Sequence[str] | None = None,
+    ) -> pd.DataFrame:
         """Prepara receitas candidatas aplicando o histórico e os filtros."""
         candidates = self.recipes_df.copy()
         user_ratings = self._ensure_user_ratings()
@@ -40,6 +47,8 @@ class RecipeRecommender:
             candidates,
             user_ratings,
             max_minutes=max_minutes,
+            max_calories=max_calories,
+            min_calories=min_calories,
             avoided_ingredients=avoided_ingredients,
             available_ingredients=available_ingredients,
             ingredient_column="RecipeIngredientParts",
@@ -156,13 +165,21 @@ class RecipeRecommender:
         self,
         user_id: int | str | None = None,
         max_minutes: float | int | None = None,
+        max_calories: float | int | None = None,
+        min_calories: float | int | None = 1.0,
         avoided_ingredients: Sequence[str] | None = None,
         available_ingredients: Sequence[str] | None = None,
         top_n: int | None = None,
     ) -> pd.DataFrame:
         """Retorna as melhores receitas para o usuário seguindo o ranking e filtros."""
         self.user_id = user_id if user_id is not None else self.user_id
-        candidates = self._prepare_candidates(max_minutes=max_minutes, avoided_ingredients=avoided_ingredients, available_ingredients=available_ingredients)
+        candidates = self._prepare_candidates(
+            max_minutes=max_minutes,
+            max_calories=max_calories,
+            min_calories=min_calories,
+            avoided_ingredients=avoided_ingredients,
+            available_ingredients=available_ingredients,
+        )
         if candidates.empty:
             return pd.DataFrame(columns=["RecipeId", "score", "explanation"])
 

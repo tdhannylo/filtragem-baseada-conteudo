@@ -16,7 +16,13 @@ from src.evaluation.run_experiments import _relevant_test_items, run_experiments
 from src.evaluation.split import split_reviews_by_user
 from src.features.text_features import build_tfidf_matrix
 from src.features.user_profile import build_user_profile, summarize_user_history
-from src.recommendation.filters import filter_by_avoid_ingredients, filter_by_available_ingredients, filter_by_time, filter_seen_recipes
+from src.recommendation.filters import (
+    filter_by_available_ingredients,
+    filter_by_avoid_ingredients,
+    filter_by_calories,
+    filter_by_time,
+    filter_seen_recipes,
+)
 from src.recommendation.recommender import RecipeRecommender
 from src.recommendation.similarity import cosine_similarity
 
@@ -155,6 +161,17 @@ def test_forbidden_ingredients_are_filtered(sample_recipes):
 def test_time_filter_works(sample_recipes):
     filtered = filter_by_time(sample_recipes, 30)
     assert set(filtered["RecipeId"]).issubset({1, 4})
+
+
+def test_calories_filter_works(sample_recipes):
+    df = sample_recipes.copy()
+    df["Calories"] = [500.0, 300.0, 0.0, 0.5]
+    filtered = filter_by_calories(df, 400, min_calories=1.0)
+    assert set(filtered["RecipeId"]) == {2}
+    assert filter_by_calories(df, None).shape[0] == len(df)
+    assert filter_by_calories(pd.DataFrame(), 500).empty
+    # When Calories column is absent, returns original df without error
+    assert filter_by_calories(sample_recipes, 400).shape[0] == len(sample_recipes)
 
 
 def test_user_without_history_is_handled(sample_recipes):

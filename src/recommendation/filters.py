@@ -91,6 +91,26 @@ def filter_by_time(candidate_df: pd.DataFrame, max_minutes: float | int | None, 
     return candidate_df.drop(columns=["_minutes"], errors="ignore")
 
 
+def filter_by_calories(
+    candidate_df: pd.DataFrame,
+    max_calories: float | int | None,
+    min_calories: float | int | None = 1.0,
+    calories_column: str = "Calories",
+) -> pd.DataFrame:
+    """Remove receitas fora dos limites de calorias e receitas sem calorias verificáveis."""
+    if candidate_df.empty or max_calories is None:
+        return candidate_df.copy()
+    if calories_column not in candidate_df.columns:
+        return candidate_df.copy()
+
+    candidate_df = candidate_df.copy()
+    calories = pd.to_numeric(candidate_df[calories_column], errors="coerce")
+    condition = calories.notna() & (calories <= float(max_calories))
+    if min_calories is not None:
+        condition = condition & (calories >= float(min_calories))
+    return candidate_df[condition].copy()
+
+
 def filter_by_available_ingredients(candidate_df: pd.DataFrame, available_ingredients: Sequence[str] | None, ingredient_column: str = "RecipeIngredientParts") -> pd.DataFrame:
     """Opção extra: mantém receitas que usam pelo menos um ingrediente disponível em casa."""
     if candidate_df.empty or not available_ingredients:
@@ -110,16 +130,20 @@ def filter_candidates(
     candidates: pd.DataFrame,
     user_ratings: pd.DataFrame | None,
     max_minutes: float | int | None = None,
+    max_calories: float | int | None = None,
+    min_calories: float | int | None = 1.0,
     avoided_ingredients: Sequence[str] | None = None,
     available_ingredients: Sequence[str] | None = None,
     ingredient_column: str = "RecipeIngredientParts",
     recipe_id_column: str = "RecipeId",
+    calories_column: str = "Calories",
 ) -> pd.DataFrame:
     """Aplica todos os filtros relevantes antes de montar o ranking final."""
     filtered = candidates.copy()
     filtered = filter_seen_recipes(filtered, user_ratings, recipe_id_column=recipe_id_column)
     filtered = filter_by_avoid_ingredients(filtered, avoided_ingredients, ingredient_column=ingredient_column)
     filtered = filter_by_time(filtered, max_minutes=max_minutes)
+    filtered = filter_by_calories(filtered, max_calories=max_calories, min_calories=min_calories, calories_column=calories_column)
     if available_ingredients:
         filtered = filter_by_available_ingredients(filtered, available_ingredients, ingredient_column=ingredient_column)
     return filtered
@@ -129,6 +153,7 @@ __all__ = [
     "filter_seen_recipes",
     "filter_by_avoid_ingredients",
     "filter_by_time",
+    "filter_by_calories",
     "filter_by_available_ingredients",
     "filter_candidates",
 ]
